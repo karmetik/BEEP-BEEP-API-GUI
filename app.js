@@ -269,11 +269,54 @@ async function exchangeGoogleToken() {
     idToken: state.googleIdToken,
   });
 
-  if (response && response.token) {
-    state.config.appToken = response.token;
-    els.appToken.value = response.token;
-    saveConfig();
+  const sessionToken = extractSessionToken(response);
+  if (!sessionToken) {
+    renderResponse(
+      {
+        error: "Session token not found in exchange response",
+        message:
+          "The request completed but no token-like field was found. Check the response body for token, sessionJwt, sessionToken, jwt, or accessToken.",
+        response,
+      },
+      400,
+    );
+    return;
   }
+
+  state.config.appToken = sessionToken;
+  els.appToken.value = sessionToken;
+  saveConfig();
+  renderResponse(
+    {
+      message: "Session token stored in App Token.",
+      tokenPreview: `${sessionToken.slice(0, 12)}...`,
+    },
+    200,
+  );
+}
+
+function extractSessionToken(response) {
+  if (!response || typeof response !== "object") {
+    return "";
+  }
+
+  const candidateKeys = [
+    "token",
+    "sessionJwt",
+    "sessionJWT",
+    "sessionToken",
+    "jwt",
+    "accessToken",
+  ];
+
+  for (const key of candidateKeys) {
+    const rawValue = response[key];
+    if (typeof rawValue === "string" && rawValue.trim()) {
+      return rawValue.trim();
+    }
+  }
+
+  return "";
 }
 
 function normalizePrefix(prefix) {
