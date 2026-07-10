@@ -252,9 +252,37 @@ function initializeGoogleSignIn(options = {}) {
 
   window.google.accounts.id.initialize({
     client_id: state.config.googleClientId,
+    ux_mode: "popup",
+    auto_select: false,
+    use_fedcm_for_prompt: false,
+    error_callback: (error) => {
+      renderResponse(
+        {
+          error: "Google Sign-In error",
+          message:
+            error?.message || "Google sign-in popup failed or was closed.",
+          details: error,
+        },
+        400,
+      );
+    },
     callback: (response) => {
       state.googleIdToken = response.credential || "";
       els.googleIdToken.value = state.googleIdToken;
+
+      if (!looksLikeJwt(state.googleIdToken)) {
+        renderResponse(
+          {
+            error: "Google ID token is invalid",
+            message:
+              "Google sign-in did not return a JWT idToken. Retry sign-in and ensure popups are allowed.",
+            receivedPreview: String(state.googleIdToken || "").slice(0, 24),
+          },
+          400,
+        );
+        return;
+      }
+
       renderResponse(
         {
           message: "Google ID token captured. Exchanging for session token...",
@@ -303,6 +331,19 @@ async function exchangeGoogleToken(options = {}) {
 
     if (!state.googleIdToken) {
       renderResponse("No Google ID token available. Sign in first.", 400);
+      return;
+    }
+
+    if (!looksLikeJwt(state.googleIdToken)) {
+      renderResponse(
+        {
+          error: "Invalid Google ID token",
+          message:
+            "Exchange requires a Google idToken JWT (3 segments). Re-run Google sign-in.",
+          receivedPreview: String(state.googleIdToken || "").slice(0, 24),
+        },
+        400,
+      );
       return;
     }
 
