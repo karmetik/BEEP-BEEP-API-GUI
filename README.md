@@ -60,6 +60,12 @@ For GitHub Pages hosting in this repo, add:
 
 - `https://karmetik.github.io`
 
+Important security note:
+
+- Use only the Google OAuth Client ID in this frontend app.
+- Do not place Google Client Secret in `index.html`, `app.js`, or any browser code.
+- If a client secret was exposed, rotate it in Google Cloud Console.
+
 The Google sign-in returns an ID token, which this UI exchanges with BeepBeep:
 
 `POST /v1/auth/google` with body:
@@ -71,6 +77,12 @@ The Google sign-in returns an ID token, which this UI exchanges with BeepBeep:
 ```
 
 On success, UI stores the returned session JWT as your app token.
+
+## Troubleshooting Google Sign-In
+
+- Confirm the page origin matches an Authorized JavaScript origin.
+- Open browser console and check for GIS errors such as `origin_mismatch`.
+- Make sure popups are allowed for your Pages domain.
 
 ## Notes
 

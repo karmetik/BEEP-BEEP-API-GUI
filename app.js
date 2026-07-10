@@ -1,8 +1,11 @@
+const DEFAULT_GOOGLE_CLIENT_ID =
+  "141226689118-74mdkq0n9e93qda25kp7numpqeuua6q2.apps.googleusercontent.com";
+
 const state = {
   config: {
     apiBaseUrl: "https://beepbeep-api-4goflu766a-uc.a.run.app",
     apiPrefix: "/v1",
-    googleClientId: "",
+    googleClientId: DEFAULT_GOOGLE_CLIENT_ID,
     cloudRunMode: "public",
     platformToken: "",
     appToken: "",
@@ -10,6 +13,8 @@ const state = {
   googleIdToken: "",
   pois: [],
 };
+
+let initializedGoogleClientId = "";
 
 const els = {
   apiBaseUrl: document.getElementById("apiBaseUrl"),
@@ -48,6 +53,7 @@ function init() {
   bindEvents();
   syncConfigToUI();
   refreshModeUI();
+  setupGoogleAutoInit();
 }
 
 function bindEvents() {
@@ -65,7 +71,13 @@ function bindEvents() {
 
   els.initGoogleBtn.addEventListener("click", () => {
     syncUIToConfig();
-    initializeGoogleSignIn();
+    initializeGoogleSignIn({ force: true });
+  });
+
+  els.googleClientId.addEventListener("change", () => {
+    syncUIToConfig();
+    saveConfig();
+    initializeGoogleSignIn({ silent: true, force: true });
   });
 
   els.exchangeBtn.addEventListener("click", exchangeGoogleToken);
@@ -105,6 +117,10 @@ function loadConfig() {
   } catch (_err) {
     localStorage.removeItem(localStorageKey);
   }
+
+  if (!state.config.googleClientId) {
+    state.config.googleClientId = DEFAULT_GOOGLE_CLIENT_ID;
+  }
 }
 
 function saveConfig() {
@@ -135,14 +151,69 @@ function refreshModeUI() {
   els.platformTokenWrap.classList.toggle("hidden", !privateMode);
 }
 
-function initializeGoogleSignIn() {
+function setupGoogleAutoInit() {
+  waitForGoogleIdentity()
+    .then(() => {
+      initializeGoogleSignIn({ silent: true });
+    })
+    .catch(() => {
+      renderResponse(
+        {
+          error: "Google script failed to load",
+          message:
+            "Sign-in script did not become ready. Check network and allow https://accounts.google.com.",
+        },
+        400,
+      );
+    });
+}
+
+function waitForGoogleIdentity(timeoutMs = 12000) {
+  const start = Date.now();
+
+  return new Promise((resolve, reject) => {
+    const timer = setInterval(() => {
+      if (
+        window.google &&
+        window.google.accounts &&
+        window.google.accounts.id
+      ) {
+        clearInterval(timer);
+        resolve();
+        return;
+      }
+
+      if (Date.now() - start > timeoutMs) {
+        clearInterval(timer);
+        reject(new Error("Google Identity Services not ready"));
+      }
+    }, 100);
+  });
+}
+
+function initializeGoogleSignIn(options = {}) {
+  const { silent = false, force = false } = options;
+
+  syncUIToConfig();
+
   if (!window.google || !window.google.accounts || !window.google.accounts.id) {
-    renderResponse("Google script not ready yet. Try again in a moment.", 400);
+    if (!silent) {
+      renderResponse(
+        "Google script not ready yet. Try again in a moment.",
+        400,
+      );
+    }
     return;
   }
 
   if (!state.config.googleClientId) {
-    renderResponse("Google Client ID is required.", 400);
+    if (!silent) {
+      renderResponse("Google Client ID is required.", 400);
+    }
+    return;
+  }
+
+  if (!force && initializedGoogleClientId === state.config.googleClientId) {
     return;
   }
 
@@ -171,7 +242,19 @@ function initializeGoogleSignIn() {
     width: 320,
   });
 
+  initializedGoogleClientId = state.config.googleClientId;
+
   window.google.accounts.id.prompt();
+
+  if (!silent) {
+    renderResponse(
+      {
+        message:
+          "Google Sign-In initialized. If popup is blocked, allow popups and try again.",
+      },
+      200,
+    );
+  }
 }
 
 async function exchangeGoogleToken() {
