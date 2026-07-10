@@ -359,15 +359,22 @@ function buildHeaders(method, includeJsonBody, path = "") {
   const normalizedPlatformToken = normalizeToken(state.config.platformToken);
   const normalizedAppToken = normalizeToken(state.config.appToken);
   const skipAppAuthHeaders = isGoogleExchangePath(path);
+  const allowApiKeyOnExchange =
+    skipAppAuthHeaders &&
+    Boolean(normalizedAppToken) &&
+    !looksLikeJwt(normalizedAppToken);
 
   if (privateMode) {
     if (normalizedPlatformToken) {
       headers.Authorization = `Bearer ${normalizedPlatformToken}`;
     }
-    if (!skipAppAuthHeaders && normalizedAppToken) {
+    if ((!skipAppAuthHeaders || allowApiKeyOnExchange) && normalizedAppToken) {
       headers["X-Serverless-Authorization"] = `Bearer ${normalizedAppToken}`;
     }
-  } else if (!skipAppAuthHeaders && normalizedAppToken) {
+  } else if (
+    (!skipAppAuthHeaders || allowApiKeyOnExchange) &&
+    normalizedAppToken
+  ) {
     headers.Authorization = `Bearer ${normalizedAppToken}`;
   }
 
@@ -446,6 +453,12 @@ function normalizeToken(tokenValue) {
   const value = (tokenValue || "").trim();
   if (!value) return "";
   return value.replace(/^Bearer\s+/i, "").trim();
+}
+
+function looksLikeJwt(tokenValue) {
+  if (!tokenValue) return false;
+  const parts = tokenValue.split(".");
+  return parts.length === 3 && parts.every((part) => part.length > 0);
 }
 
 function buildNetworkErrorPayload(error, requestUrl, method, headers) {
