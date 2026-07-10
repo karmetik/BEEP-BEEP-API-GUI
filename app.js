@@ -15,6 +15,7 @@ const state = {
 };
 
 let initializedGoogleClientId = "";
+let isExchangingGoogleToken = false;
 
 const els = {
   apiBaseUrl: document.getElementById("apiBaseUrl"),
@@ -226,11 +227,12 @@ function initializeGoogleSignIn(options = {}) {
       els.googleIdToken.value = state.googleIdToken;
       renderResponse(
         {
-          message:
-            "Google ID token captured. Click exchange to get session JWT.",
+          message: "Google ID token captured. Exchanging for session token...",
         },
         200,
       );
+
+      void exchangeGoogleToken({ auto: true });
     },
   });
 
@@ -257,42 +259,56 @@ function initializeGoogleSignIn(options = {}) {
   }
 }
 
-async function exchangeGoogleToken() {
-  syncUIToConfig();
+async function exchangeGoogleToken(options = {}) {
+  const { auto = false } = options;
 
-  if (!state.googleIdToken) {
-    renderResponse("No Google ID token available. Sign in first.", 400);
+  if (isExchangingGoogleToken) {
     return;
   }
 
-  const response = await apiRequest("POST", "/auth/google", {
-    idToken: state.googleIdToken,
-  });
+  isExchangingGoogleToken = true;
 
-  const sessionToken = extractSessionToken(response);
-  if (!sessionToken) {
+  try {
+    syncUIToConfig();
+
+    if (!state.googleIdToken) {
+      renderResponse("No Google ID token available. Sign in first.", 400);
+      return;
+    }
+
+    const response = await apiRequest("POST", "/auth/google", {
+      idToken: state.googleIdToken,
+    });
+
+    const sessionToken = extractSessionToken(response);
+    if (!sessionToken) {
+      renderResponse(
+        {
+          error: "Session token not found in exchange response",
+          message:
+            "The request completed but no token-like field was found. Check the response body for token, sessionJwt, sessionToken, jwt, or accessToken.",
+          response,
+        },
+        400,
+      );
+      return;
+    }
+
+    state.config.appToken = sessionToken;
+    els.appToken.value = sessionToken;
+    saveConfig();
     renderResponse(
       {
-        error: "Session token not found in exchange response",
-        message:
-          "The request completed but no token-like field was found. Check the response body for token, sessionJwt, sessionToken, jwt, or accessToken.",
-        response,
+        message: auto
+          ? "Google sign-in complete. Session token stored in App Token."
+          : "Session token stored in App Token.",
+        tokenPreview: `${sessionToken.slice(0, 12)}...`,
       },
-      400,
+      200,
     );
-    return;
+  } finally {
+    isExchangingGoogleToken = false;
   }
-
-  state.config.appToken = sessionToken;
-  els.appToken.value = sessionToken;
-  saveConfig();
-  renderResponse(
-    {
-      message: "Session token stored in App Token.",
-      tokenPreview: `${sessionToken.slice(0, 12)}...`,
-    },
-    200,
-  );
 }
 
 function extractSessionToken(response) {
@@ -313,6 +329,19 @@ function extractSessionToken(response) {
     const rawValue = response[key];
     if (typeof rawValue === "string" && rawValue.trim()) {
       return rawValue.trim();
+    }
+  }
+
+  const nestedKeys = ["data", "result", "auth", "payload"];
+  for (const nestedKey of nestedKeys) {
+    const nested = response[nestedKey];
+    if (nested && typeof nested === "object") {
+      for (const key of candidateKeys) {
+        const rawValue = nested[key];
+        if (typeof rawValue === "string" && rawValue.trim()) {
+          return rawValue.trim();
+        }
+      }
     }
   }
 
