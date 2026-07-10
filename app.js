@@ -26,6 +26,7 @@ const els = {
   platformTokenWrap: document.getElementById("platformTokenWrap"),
   platformToken: document.getElementById("platformToken"),
   appToken: document.getElementById("appToken"),
+  sessionToken: document.getElementById("sessionToken"),
   googleIdToken: document.getElementById("googleIdToken"),
   googleButtonWrap: document.getElementById("googleButtonWrap"),
   saveConfigBtn: document.getElementById("saveConfigBtn"),
@@ -136,6 +137,7 @@ function syncConfigToUI() {
   els.cloudRunMode.value = state.config.cloudRunMode;
   els.platformToken.value = state.config.platformToken;
   els.appToken.value = state.config.appToken;
+  els.sessionToken.value = state.config.sessionToken || "";
   els.googleIdToken.value = state.googleIdToken;
 }
 
@@ -281,6 +283,10 @@ async function exchangeGoogleToken(options = {}) {
       idToken: state.googleIdToken,
     });
 
+    if (!response) {
+      return;
+    }
+
     const sessionToken = extractSessionToken(response);
     if (!sessionToken) {
       renderResponse(
@@ -303,6 +309,7 @@ async function exchangeGoogleToken(options = {}) {
     // If user has an API key active, keep it active to avoid breaking API-key-only backends.
     if (hasApiKeyAsActiveToken && receivedJwtFromExchange) {
       state.config.sessionToken = sessionToken;
+      els.sessionToken.value = sessionToken;
       saveConfig();
       renderResponse(
         {
@@ -318,6 +325,7 @@ async function exchangeGoogleToken(options = {}) {
     state.config.appToken = sessionToken;
     state.config.sessionToken = sessionToken;
     els.appToken.value = sessionToken;
+    els.sessionToken.value = sessionToken;
     saveConfig();
     renderResponse(
       {
