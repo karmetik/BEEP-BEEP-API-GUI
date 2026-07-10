@@ -436,7 +436,7 @@ function buildHeaders(method, includeJsonBody, path = "") {
   const normalizedPlatformToken = normalizeToken(state.config.platformToken);
   const normalizedAppToken = normalizeToken(state.config.appToken);
   const normalizedSessionToken = normalizeToken(state.config.sessionToken);
-  const preferredAppAuthToken =
+  const selectedAppAuthToken =
     state.config.authTokenSource === "sessionToken" && normalizedSessionToken
       ? normalizedSessionToken
       : normalizedAppToken;
@@ -445,6 +445,9 @@ function buildHeaders(method, includeJsonBody, path = "") {
     skipAppAuthHeaders &&
     Boolean(normalizedAppToken) &&
     !looksLikeJwt(normalizedAppToken);
+  const effectiveAppAuthToken = allowApiKeyOnExchange
+    ? normalizedAppToken
+    : selectedAppAuthToken;
 
   if (privateMode) {
     if (normalizedPlatformToken) {
@@ -452,15 +455,15 @@ function buildHeaders(method, includeJsonBody, path = "") {
     }
     if (
       (!skipAppAuthHeaders || allowApiKeyOnExchange) &&
-      preferredAppAuthToken
+      effectiveAppAuthToken
     ) {
-      headers["X-Serverless-Authorization"] = `Bearer ${preferredAppAuthToken}`;
+      headers["X-Serverless-Authorization"] = `Bearer ${effectiveAppAuthToken}`;
     }
   } else if (
     (!skipAppAuthHeaders || allowApiKeyOnExchange) &&
-    preferredAppAuthToken
+    effectiveAppAuthToken
   ) {
-    headers.Authorization = `Bearer ${preferredAppAuthToken}`;
+    headers.Authorization = `Bearer ${effectiveAppAuthToken}`;
   }
 
   if (includeJsonBody && method !== "GET") {
