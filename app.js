@@ -9,6 +9,7 @@ const state = {
     cloudRunMode: "public",
     platformToken: "",
     appToken: "",
+    sessionToken: "",
   },
   googleIdToken: "",
   pois: [],
@@ -294,7 +295,28 @@ async function exchangeGoogleToken(options = {}) {
       return;
     }
 
+    const currentAppToken = normalizeToken(state.config.appToken);
+    const hasApiKeyAsActiveToken =
+      Boolean(currentAppToken) && !looksLikeJwt(currentAppToken);
+    const receivedJwtFromExchange = looksLikeJwt(sessionToken);
+
+    // If user has an API key active, keep it active to avoid breaking API-key-only backends.
+    if (hasApiKeyAsActiveToken && receivedJwtFromExchange) {
+      state.config.sessionToken = sessionToken;
+      saveConfig();
+      renderResponse(
+        {
+          message:
+            "Session JWT received and saved. Kept API key as active App Token to satisfy API-key auth.",
+          sessionTokenPreview: `${sessionToken.slice(0, 12)}...`,
+        },
+        200,
+      );
+      return;
+    }
+
     state.config.appToken = sessionToken;
+    state.config.sessionToken = sessionToken;
     els.appToken.value = sessionToken;
     saveConfig();
     renderResponse(
