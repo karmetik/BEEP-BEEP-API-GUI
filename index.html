@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BeepBeep API Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+  </head>
+  <body>
+    <div class="bg-layer" aria-hidden="true"></div>
+    <header class="topbar">
+      <h1>BeepBeep API Console</h1>
+      <p>Google OAuth + Session Exchange + POI Database Tools</p>
+    </header>
+
+    <main class="layout">
+      <section class="panel" id="auth-panel">
+        <h2>1) Auth Setup</h2>
+        <div class="grid two-col">
+          <label>
+            API Base URL
+            <input
+              id="apiBaseUrl"
+              type="url"
+              value="https://beepbeep-api-4goflu766a-uc.a.run.app"
+            />
+          </label>
+
+          <label>
+            API Prefix
+            <input id="apiPrefix" type="text" value="/v1" />
+          </label>
+
+          <label>
+            Google Client ID
+            <input
+              id="googleClientId"
+              type="text"
+              placeholder="1234567890-xxxx.apps.googleusercontent.com"
+            />
+          </label>
+
+          <label>
+            Cloud Run Mode
+            <select id="cloudRunMode">
+              <option value="public">Public Cloud Run</option>
+              <option value="private">Private Cloud Run (IAM)</option>
+            </select>
+          </label>
+
+          <label id="platformTokenWrap" class="hidden full-row">
+            GCP Identity Token (Platform Token)
+            <textarea
+              id="platformToken"
+              rows="2"
+              placeholder="Paste gcloud auth print-identity-token"
+            ></textarea>
+          </label>
+
+          <label class="full-row">
+            App Token (API Key or Session JWT)
+            <textarea
+              id="appToken"
+              rows="2"
+              placeholder="Will auto-fill after Google session exchange"
+            ></textarea>
+          </label>
+        </div>
+
+        <div class="row">
+          <button id="saveConfigBtn" class="secondary">Save Config</button>
+          <button id="initGoogleBtn">Initialize Google Sign-In</button>
+          <button id="exchangeBtn" class="secondary">
+            Exchange Google ID Token -> Session JWT
+          </button>
+        </div>
+
+        <div id="googleButtonWrap"></div>
+
+        <label>
+          Last Google ID Token
+          <textarea id="googleIdToken" rows="3" readonly></textarea>
+        </label>
+      </section>
+
+      <section class="panel" id="database-panel">
+        <h2>2) POI Database</h2>
+
+        <form id="poiForm" class="grid two-col">
+          <label>
+            POI ID (for update)
+            <input
+              id="poiId"
+              type="text"
+              placeholder="Leave empty for create"
+            />
+          </label>
+          <label>
+            Name *
+            <input id="name" type="text" required />
+          </label>
+
+          <label>
+            Latitude *
+            <input id="latitude" type="number" step="any" required />
+          </label>
+          <label>
+            Longitude *
+            <input id="longitude" type="number" step="any" required />
+          </label>
+
+          <label>
+            Kid Friendly *
+            <select id="isKidFriendly" required>
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+          <label>
+            Category
+            <input id="category" type="text" />
+          </label>
+
+          <label class="full-row">
+            Subtitle
+            <input id="subtitle" type="text" />
+          </label>
+
+          <label class="full-row">
+            Description
+            <textarea id="description" rows="2"></textarea>
+          </label>
+
+          <label class="full-row">
+            Story
+            <textarea id="story" rows="2"></textarea>
+          </label>
+
+          <label>
+            Rating
+            <input id="rating" type="number" step="0.1" min="0" max="5" />
+          </label>
+
+          <label>
+            Phone Number
+            <input id="phoneNumber" type="text" />
+          </label>
+
+          <label>
+            Website
+            <input id="website" type="url" />
+          </label>
+
+          <label>
+            Opening Hours
+            <input id="openingHours" type="text" />
+          </label>
+
+          <label class="full-row">
+            imageURLs (JSON array)
+            <textarea
+              id="imageURLs"
+              rows="2"
+              placeholder='["https://..."]'
+            ></textarea>
+          </label>
+
+          <label class="full-row">
+            tags (JSON array)
+            <textarea
+              id="tags"
+              rows="2"
+              placeholder='["museum", "family"]'
+            ></textarea>
+          </label>
+
+          <div class="row full-row">
+            <button type="submit" id="savePoiBtn">Create / Update POI</button>
+            <button type="button" id="clearPoiBtn" class="secondary">
+              Clear Form
+            </button>
+          </div>
+        </form>
+
+        <div class="row wrap">
+          <button id="listPoisBtn">Refresh POIs</button>
+          <input
+            id="categoryFilter"
+            type="text"
+            placeholder="Filter category"
+          />
+          <input id="searchQuery" type="text" placeholder="Search q" />
+          <button id="searchPoisBtn" class="secondary">Search</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Kid Friendly</th>
+                <th>Rating</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="poiTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" id="tester-panel">
+        <h2>3) API Tester</h2>
+
+        <div class="grid two-col">
+          <label>
+            Method
+            <select id="testMethod">
+              <option>GET</option>
+              <option>POST</option>
+              <option>PUT</option>
+              <option>DELETE</option>
+            </select>
+          </label>
+
+          <label>
+            Path
+            <input id="testPath" type="text" value="/pois" />
+          </label>
+
+          <label class="full-row">
+            JSON Body
+            <textarea
+              id="testBody"
+              rows="6"
+              placeholder='{"name":"Sample"}'
+            ></textarea>
+          </label>
+        </div>
+
+        <div class="row">
+          <button id="runTestBtn">Run Request</button>
+        </div>
+      </section>
+
+      <section class="panel" id="results-panel">
+        <h2>4) Response Viewer</h2>
+        <p id="statusBadge" class="badge">No request yet</p>
+        <pre id="responseOutput">{}</pre>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        Use private mode if Cloud Run IAM is enforced. In private mode, platform
+        token is sent via Authorization and app auth token via
+        X-Serverless-Authorization.
+      </p>
+    </footer>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
