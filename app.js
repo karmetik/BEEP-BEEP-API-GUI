@@ -10,7 +10,7 @@ const state = {
     platformToken: "",
     appToken: "",
     sessionToken: "",
-    authTokenSource: "appToken",
+    authTokenSource: "sessionToken",
   },
   googleIdToken: "",
   pois: [],
@@ -140,6 +140,10 @@ function loadConfig() {
 
   if (!state.config.googleClientId) {
     state.config.googleClientId = DEFAULT_GOOGLE_CLIENT_ID;
+  }
+
+  if (!state.config.authTokenSource) {
+    state.config.authTokenSource = "sessionToken";
   }
 }
 
@@ -302,9 +306,16 @@ async function exchangeGoogleToken(options = {}) {
       return;
     }
 
-    const response = await apiRequest("POST", "/auth/google", {
+    let response = await apiRequest("POST", "/auth/google", {
       idToken: state.googleIdToken,
     });
+
+    // Backward-compatible fallback while rolling deployments.
+    if (!response) {
+      response = await apiRequest("POST", "/v1/auth/google", {
+        idToken: state.googleIdToken,
+      });
+    }
 
     if (!response) {
       return;
@@ -324,28 +335,7 @@ async function exchangeGoogleToken(options = {}) {
       return;
     }
 
-    const currentAppToken = normalizeToken(state.config.appToken);
-    const hasApiKeyAsActiveToken =
-      Boolean(currentAppToken) && !looksLikeJwt(currentAppToken);
     const receivedJwtFromExchange = looksLikeJwt(sessionToken);
-
-    // If user has an API key active, keep it active to avoid breaking API-key-only backends.
-    if (hasApiKeyAsActiveToken && receivedJwtFromExchange) {
-      state.config.sessionToken = sessionToken;
-      state.config.authTokenSource = "sessionToken";
-      els.sessionToken.value = sessionToken;
-      els.authTokenSource.value = "sessionToken";
-      saveConfig();
-      renderResponse(
-        {
-          message:
-            "Session JWT received and saved. Kept API key as active App Token to satisfy API-key auth.",
-          sessionTokenPreview: `${sessionToken.slice(0, 12)}...`,
-        },
-        200,
-      );
-      return;
-    }
 
     if (receivedJwtFromExchange) {
       state.config.appToken = sessionToken;
@@ -367,21 +357,22 @@ async function exchangeGoogleToken(options = {}) {
       return;
     }
 
-    // Backend can return API key token when SESSION_JWT_SECRET is not configured.
-    state.config.appToken = sessionToken;
+    // User requested JWT-only auth flow. If backend is in API-key mode, show explicit config error.
+    state.config.appToken = "";
     state.config.sessionToken = "";
-    state.config.authTokenSource = "appToken";
-    els.appToken.value = sessionToken;
+    state.config.authTokenSource = "sessionToken";
+    els.appToken.value = "";
     els.sessionToken.value = "";
-    els.authTokenSource.value = "appToken";
+    els.authTokenSource.value = "sessionToken";
     saveConfig();
     renderResponse(
       {
+        error: "Backend is not returning a Session JWT",
         message:
-          "Google exchange returned API key mode token (no Session JWT configured). Stored in App Token.",
-        tokenPreview: `${sessionToken.slice(0, 12)}...`,
+          "Google exchange succeeded but token is not a JWT. Configure backend with SESSION_JWT_SECRET to enable session JWT auth without API key.",
+        returnedTokenPreview: `${sessionToken.slice(0, 12)}...`,
       },
-      200,
+      400,
     );
   } finally {
     isExchangingGoogleToken = false;
@@ -441,29 +432,16 @@ function buildHeaders(method, includeJsonBody, path = "") {
       ? normalizedSessionToken
       : normalizedAppToken;
   const skipAppAuthHeaders = isGoogleExchangePath(path);
-  const allowApiKeyOnExchange =
-    skipAppAuthHeaders &&
-    Boolean(normalizedAppToken) &&
-    !looksLikeJwt(normalizedAppToken);
-  const effectiveAppAuthToken = allowApiKeyOnExchange
-    ? normalizedAppToken
-    : selectedAppAuthToken;
 
   if (privateMode) {
     if (normalizedPlatformToken) {
       headers.Authorization = `Bearer ${normalizedPlatformToken}`;
     }
-    if (
-      (!skipAppAuthHeaders || allowApiKeyOnExchange) &&
-      effectiveAppAuthToken
-    ) {
-      headers["X-Serverless-Authorization"] = `Bearer ${effectiveAppAuthToken}`;
+    if (!skipAppAuthHeaders && selectedAppAuthToken) {
+      headers["X-Serverless-Authorization"] = `Bearer ${selectedAppAuthToken}`;
     }
-  } else if (
-    (!skipAppAuthHeaders || allowApiKeyOnExchange) &&
-    effectiveAppAuthToken
-  ) {
-    headers.Authorization = `Bearer ${effectiveAppAuthToken}`;
+  } else if (!skipAppAuthHeaders && selectedAppAuthToken) {
+    headers.Authorization = `Bearer ${selectedAppAuthToken}`;
   }
 
   if (includeJsonBody && method !== "GET") {
