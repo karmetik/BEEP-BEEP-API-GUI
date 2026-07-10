@@ -10,6 +10,7 @@ const state = {
     platformToken: "",
     appToken: "",
     sessionToken: "",
+    authTokenSource: "appToken",
   },
   googleIdToken: "",
   pois: [],
@@ -27,6 +28,7 @@ const els = {
   platformToken: document.getElementById("platformToken"),
   appToken: document.getElementById("appToken"),
   sessionToken: document.getElementById("sessionToken"),
+  authTokenSource: document.getElementById("authTokenSource"),
   googleIdToken: document.getElementById("googleIdToken"),
   googleButtonWrap: document.getElementById("googleButtonWrap"),
   saveConfigBtn: document.getElementById("saveConfigBtn"),
@@ -81,6 +83,21 @@ function bindEvents() {
     syncUIToConfig();
     saveConfig();
     initializeGoogleSignIn({ silent: true, force: true });
+  });
+
+  els.authTokenSource.addEventListener("change", () => {
+    syncUIToConfig();
+    saveConfig();
+    const sourceLabel =
+      state.config.authTokenSource === "sessionToken"
+        ? "Session JWT"
+        : "App Token";
+    renderResponse(
+      {
+        message: `Requests will now use ${sourceLabel}.`,
+      },
+      200,
+    );
   });
 
   els.exchangeBtn.addEventListener("click", exchangeGoogleToken);
@@ -138,6 +155,10 @@ function syncConfigToUI() {
   els.platformToken.value = state.config.platformToken;
   els.appToken.value = state.config.appToken;
   els.sessionToken.value = state.config.sessionToken || "";
+  els.authTokenSource.value =
+    state.config.authTokenSource === "sessionToken"
+      ? "sessionToken"
+      : "appToken";
   els.googleIdToken.value = state.googleIdToken;
 }
 
@@ -148,6 +169,8 @@ function syncUIToConfig() {
   state.config.cloudRunMode = els.cloudRunMode.value;
   state.config.platformToken = els.platformToken.value.trim();
   state.config.appToken = els.appToken.value.trim();
+  state.config.authTokenSource =
+    els.authTokenSource.value === "sessionToken" ? "sessionToken" : "appToken";
 }
 
 function refreshModeUI() {
@@ -309,7 +332,9 @@ async function exchangeGoogleToken(options = {}) {
     // If user has an API key active, keep it active to avoid breaking API-key-only backends.
     if (hasApiKeyAsActiveToken && receivedJwtFromExchange) {
       state.config.sessionToken = sessionToken;
+      state.config.authTokenSource = "sessionToken";
       els.sessionToken.value = sessionToken;
+      els.authTokenSource.value = "sessionToken";
       saveConfig();
       renderResponse(
         {
@@ -325,8 +350,10 @@ async function exchangeGoogleToken(options = {}) {
     if (receivedJwtFromExchange) {
       state.config.appToken = sessionToken;
       state.config.sessionToken = sessionToken;
+      state.config.authTokenSource = "sessionToken";
       els.appToken.value = sessionToken;
       els.sessionToken.value = sessionToken;
+      els.authTokenSource.value = "sessionToken";
       saveConfig();
       renderResponse(
         {
@@ -343,8 +370,10 @@ async function exchangeGoogleToken(options = {}) {
     // Backend can return API key token when SESSION_JWT_SECRET is not configured.
     state.config.appToken = sessionToken;
     state.config.sessionToken = "";
+    state.config.authTokenSource = "appToken";
     els.appToken.value = sessionToken;
     els.sessionToken.value = "";
+    els.authTokenSource.value = "appToken";
     saveConfig();
     renderResponse(
       {
@@ -406,6 +435,11 @@ function buildHeaders(method, includeJsonBody, path = "") {
   const privateMode = state.config.cloudRunMode === "private";
   const normalizedPlatformToken = normalizeToken(state.config.platformToken);
   const normalizedAppToken = normalizeToken(state.config.appToken);
+  const normalizedSessionToken = normalizeToken(state.config.sessionToken);
+  const preferredAppAuthToken =
+    state.config.authTokenSource === "sessionToken" && normalizedSessionToken
+      ? normalizedSessionToken
+      : normalizedAppToken;
   const skipAppAuthHeaders = isGoogleExchangePath(path);
   const allowApiKeyOnExchange =
     skipAppAuthHeaders &&
@@ -416,14 +450,17 @@ function buildHeaders(method, includeJsonBody, path = "") {
     if (normalizedPlatformToken) {
       headers.Authorization = `Bearer ${normalizedPlatformToken}`;
     }
-    if ((!skipAppAuthHeaders || allowApiKeyOnExchange) && normalizedAppToken) {
-      headers["X-Serverless-Authorization"] = `Bearer ${normalizedAppToken}`;
+    if (
+      (!skipAppAuthHeaders || allowApiKeyOnExchange) &&
+      preferredAppAuthToken
+    ) {
+      headers["X-Serverless-Authorization"] = `Bearer ${preferredAppAuthToken}`;
     }
   } else if (
     (!skipAppAuthHeaders || allowApiKeyOnExchange) &&
-    normalizedAppToken
+    preferredAppAuthToken
   ) {
-    headers.Authorization = `Bearer ${normalizedAppToken}`;
+    headers.Authorization = `Bearer ${preferredAppAuthToken}`;
   }
 
   if (includeJsonBody && method !== "GET") {

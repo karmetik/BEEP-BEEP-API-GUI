@@ -73,6 +73,14 @@
             ></textarea>
           </label>
 
+          <label>
+            Token Used For API Requests
+            <select id="authTokenSource">
+              <option value="appToken">App Token Field</option>
+              <option value="sessionToken">Session JWT Field</option>
+            </select>
+          </label>
+
           <label class="full-row">
             Session JWT (from /auth/google)
             <textarea
