@@ -281,20 +281,21 @@ function normalizePrefix(prefix) {
   return prefix.startsWith("/") ? prefix : `/${prefix}`;
 }
 
-function buildHeaders(method, includeJsonBody) {
+function buildHeaders(method, includeJsonBody, path = "") {
   const headers = {};
   const privateMode = state.config.cloudRunMode === "private";
   const normalizedPlatformToken = normalizeToken(state.config.platformToken);
   const normalizedAppToken = normalizeToken(state.config.appToken);
+  const skipAppAuthHeaders = isGoogleExchangePath(path);
 
   if (privateMode) {
     if (normalizedPlatformToken) {
       headers.Authorization = `Bearer ${normalizedPlatformToken}`;
     }
-    if (normalizedAppToken) {
+    if (!skipAppAuthHeaders && normalizedAppToken) {
       headers["X-Serverless-Authorization"] = `Bearer ${normalizedAppToken}`;
     }
-  } else if (normalizedAppToken) {
+  } else if (!skipAppAuthHeaders && normalizedAppToken) {
     headers.Authorization = `Bearer ${normalizedAppToken}`;
   }
 
@@ -311,7 +312,7 @@ async function apiRequest(method, path, body) {
 
   const url = buildRequestUrl(path);
   const includeJsonBody = body !== undefined && body !== null;
-  const headers = buildHeaders(method, includeJsonBody);
+  const headers = buildHeaders(method, includeJsonBody, path);
 
   try {
     const res = await fetch(url, {
@@ -347,6 +348,28 @@ async function apiRequest(method, path, body) {
   }
 }
 
+function isGoogleExchangePath(pathValue) {
+  const raw = String(pathValue || "").trim();
+  if (!raw) return false;
+
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      return parsed.pathname.endsWith("/auth/google");
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  const normalizedPath = raw.startsWith("/") ? raw : `/${raw}`;
+  if (normalizedPath.endsWith("/auth/google")) {
+    return true;
+  }
+
+  const prefix = normalizePrefix(state.config.apiPrefix);
+  return normalizedPath === `${prefix}/auth/google`;
+}
+
 function normalizeToken(tokenValue) {
   const value = (tokenValue || "").trim();
   if (!value) return "";
@@ -375,18 +398,13 @@ function buildNetworkErrorPayload(error, requestUrl, method, headers) {
     },
     fixChecklist: [
       "Confirm API URL is reachable in browser: open /health directly",
-      "Allow origin in backend CORS: Access-Control-Allow-Origin should include your Pages origin",
+      `Allow this app origin in backend CORS: ${pageOrigin}`,
       "Allow headers in CORS: Authorization, X-Serverless-Authorization, Content-Type",
       "Allow methods in CORS: GET, POST, PUT, DELETE, OPTIONS",
+      "Ensure OPTIONS preflight returns 2xx before auth middleware",
       "If Cloud Run is private, ensure valid platform token is set",
     ],
   };
-
-  if (window.location.hostname.endsWith("github.io")) {
-    payload.fixChecklist.unshift(
-      "For this Pages site, allow origin: https://karmetik.github.io",
-    );
-  }
 
   return payload;
 }
