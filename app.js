@@ -322,16 +322,34 @@ async function exchangeGoogleToken(options = {}) {
       return;
     }
 
+    if (receivedJwtFromExchange) {
+      state.config.appToken = sessionToken;
+      state.config.sessionToken = sessionToken;
+      els.appToken.value = sessionToken;
+      els.sessionToken.value = sessionToken;
+      saveConfig();
+      renderResponse(
+        {
+          message: auto
+            ? "Google sign-in complete. Session JWT stored in App Token and Session JWT field."
+            : "Session JWT stored in App Token and Session JWT field.",
+          tokenPreview: `${sessionToken.slice(0, 12)}...`,
+        },
+        200,
+      );
+      return;
+    }
+
+    // Backend can return API key token when SESSION_JWT_SECRET is not configured.
     state.config.appToken = sessionToken;
-    state.config.sessionToken = sessionToken;
+    state.config.sessionToken = "";
     els.appToken.value = sessionToken;
-    els.sessionToken.value = sessionToken;
+    els.sessionToken.value = "";
     saveConfig();
     renderResponse(
       {
-        message: auto
-          ? "Google sign-in complete. Session token stored in App Token."
-          : "Session token stored in App Token.",
+        message:
+          "Google exchange returned API key mode token (no Session JWT configured). Stored in App Token.",
         tokenPreview: `${sessionToken.slice(0, 12)}...`,
       },
       200,
@@ -542,6 +560,13 @@ function buildRequestUrl(path) {
   const prefix = normalizePrefix(state.config.apiPrefix);
 
   if (cleanedPath === "/health" || cleanedPath.startsWith("/health?")) {
+    return `${state.config.apiBaseUrl}${cleanedPath}`;
+  }
+
+  if (
+    cleanedPath === "/auth/google" ||
+    cleanedPath.startsWith("/auth/google?")
+  ) {
     return `${state.config.apiBaseUrl}${cleanedPath}`;
   }
 
