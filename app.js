@@ -284,16 +284,18 @@ function normalizePrefix(prefix) {
 function buildHeaders(method, includeJsonBody) {
   const headers = {};
   const privateMode = state.config.cloudRunMode === "private";
+  const normalizedPlatformToken = normalizeToken(state.config.platformToken);
+  const normalizedAppToken = normalizeToken(state.config.appToken);
 
   if (privateMode) {
-    if (state.config.platformToken) {
-      headers.Authorization = `Bearer ${state.config.platformToken}`;
+    if (normalizedPlatformToken) {
+      headers.Authorization = `Bearer ${normalizedPlatformToken}`;
     }
-    if (state.config.appToken) {
-      headers["X-Serverless-Authorization"] = `Bearer ${state.config.appToken}`;
+    if (normalizedAppToken) {
+      headers["X-Serverless-Authorization"] = `Bearer ${normalizedAppToken}`;
     }
-  } else if (state.config.appToken) {
-    headers.Authorization = `Bearer ${state.config.appToken}`;
+  } else if (normalizedAppToken) {
+    headers.Authorization = `Bearer ${normalizedAppToken}`;
   }
 
   if (includeJsonBody && method !== "GET") {
@@ -309,11 +311,15 @@ async function apiRequest(method, path, body) {
 
   const url = buildRequestUrl(path);
   const includeJsonBody = body !== undefined && body !== null;
+  const headers = buildHeaders(method, includeJsonBody);
 
   try {
     const res = await fetch(url, {
       method,
-      headers: buildHeaders(method, includeJsonBody),
+      mode: "cors",
+      cache: "no-store",
+      credentials: "omit",
+      headers,
       body: includeJsonBody ? JSON.stringify(body) : undefined,
     });
 
@@ -335,9 +341,61 @@ async function apiRequest(method, path, body) {
     return payload;
   } catch (error) {
     if (!String(error.message || "").includes("Request failed")) {
-      renderResponse({ error: "Network error", message: String(error) }, 0);
+      renderResponse(buildNetworkErrorPayload(error, url, method, headers), 0);
     }
     return null;
+  }
+}
+
+function normalizeToken(tokenValue) {
+  const value = (tokenValue || "").trim();
+  if (!value) return "";
+  return value.replace(/^Bearer\s+/i, "").trim();
+}
+
+function buildNetworkErrorPayload(error, requestUrl, method, headers) {
+  const requestOrigin = safeOrigin(requestUrl);
+  const pageOrigin = window.location.origin;
+  const isCrossOrigin = Boolean(requestOrigin && requestOrigin !== pageOrigin);
+
+  const payload = {
+    error: "Network error",
+    message: String(error),
+    likelyCause:
+      isCrossOrigin && error instanceof TypeError
+        ? "CORS or preflight blocked by API/Cloud Run"
+        : "Browser could not reach endpoint (DNS/TLS/network/ad-block/CORS)",
+    request: {
+      method,
+      url: requestUrl,
+      pageOrigin,
+      requestOrigin,
+      cloudRunMode: state.config.cloudRunMode,
+      sentHeaders: Object.keys(headers),
+    },
+    fixChecklist: [
+      "Confirm API URL is reachable in browser: open /health directly",
+      "Allow origin in backend CORS: Access-Control-Allow-Origin should include your Pages origin",
+      "Allow headers in CORS: Authorization, X-Serverless-Authorization, Content-Type",
+      "Allow methods in CORS: GET, POST, PUT, DELETE, OPTIONS",
+      "If Cloud Run is private, ensure valid platform token is set",
+    ],
+  };
+
+  if (window.location.hostname.endsWith("github.io")) {
+    payload.fixChecklist.unshift(
+      "For this Pages site, allow origin: https://karmetik.github.io",
+    );
+  }
+
+  return payload;
+}
+
+function safeOrigin(urlValue) {
+  try {
+    return new URL(urlValue).origin;
+  } catch (_err) {
+    return "";
   }
 }
 
